@@ -1,0 +1,85 @@
+// необхододимо указать свой ID Календаря calendarId
+function addScheduleToCalendar() {
+  var calendarId = 'xxxxxxxxxxxxxxxxxxxxxx@group.calendar.google.com'; 
+  var calendar = CalendarApp.getCalendarById(calendarId);
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var data = sheet.getDataRange().getValues();
+
+  // Получаем текущий день недели (Пн=1, Вс=7, как в России)
+  var today = new Date();
+  var jsDay = today.getDay(); // JS: Вс=0, Пн=1, ... Сб=6
+  var rusWeekday = jsDay === 0 ? 7 : jsDay; // Русская система (Пн=1, Вс=7)
+
+  // Находим первый день (Пн) и последний день (Вс) текущей недели
+  var mondayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - rusWeekday + 1);
+  mondayDate.setHours(0,0,0,0);
+  var sundayDate = new Date(mondayDate.getFullYear(), mondayDate.getMonth(), mondayDate.getDate() + 6, 23, 59, 59, 999);
+
+  // Удаляем все события этой недели
+  var oldEvents = calendar.getEvents(mondayDate, sundayDate);
+  for (var i = 0; i < oldEvents.length; i++) {
+    oldEvents[i].deleteEvent();
+  }
+
+  // Для парсинга времени
+  function timeToString(val) {
+    if (Object.prototype.toString.call(val) === '[object Date]') {
+      var h = val.getHours().toString().padStart(2, '0');
+      var m = val.getMinutes().toString().padStart(2, '0');
+      return h + ':' + m;
+    }
+    return val.toString();
+  }
+
+  // Карта дней недели по-русски: 1=Пн, 2=Вт, ..., 7=Вс
+  var weekDays = {
+    'понедельник': 1,
+    'вторник': 2,
+    'среда': 3,
+    'четверг': 4,
+    'пятница': 5,
+    'суббота': 6,
+    'воскресенье': 7
+  };
+
+  // Перебираем все строки расписания
+  for (var i = 1; i < data.length; i++) {
+    var day = data[i][1];
+    var startTime = data[i][2];
+    var endTime = data[i][3];
+    var description = data[i][4];
+    var category = data[i][5];
+    var color = (data[i][6] || '').toString().toUpperCase();
+    // var reminder = (data[i][7] || '').toString().toLowerCase() === 'да'; // Больше не нужен для календаря
+
+    if ((data[i][8] || '').toString().toLowerCase() !== 'активно') continue;
+    var dayNum = weekDays[day.trim().toLowerCase()];
+    if (dayNum === undefined) continue;
+
+    // Вычисляем дату этого дня в текущей неделе
+    var eventDate = new Date(mondayDate.getFullYear(), mondayDate.getMonth(), mondayDate.getDate() + (dayNum - 1));
+
+    var startParts = timeToString(startTime).split(':');
+    var endParts = timeToString(endTime).split(':');
+    var eventStart = new Date(eventDate);
+    eventStart.setHours(Number(startParts[0]), Number(startParts[1]), 0, 0);
+    var eventEnd = new Date(eventDate);
+    eventEnd.setHours(Number(endParts[0]), Number(endParts[1]), 0, 0);
+
+    // Исправление для ночных событий (через полночь)
+    if (eventEnd <= eventStart) {
+      eventEnd.setDate(eventEnd.getDate() + 1);
+    }
+
+    // Создаём событие
+    var event = calendar.createEvent(description, eventStart, eventEnd, {
+      description: category
+    });
+
+    // Задаём цвет, если он валиден
+    if (color && CalendarApp.EventColor[color]) {
+      event.setColor(CalendarApp.EventColor[color]);
+    }
+
+  }
+}
